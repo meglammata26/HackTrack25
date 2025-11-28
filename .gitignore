@@ -1,0 +1,30 @@
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+
+# Streamlit cache
+.streamlit/
+
+# Parquet, CSV, and large data files
+*.parquet
+*.csv
+*.npz
+*.npy
+
+# Logs
+*.log
+
+# MacOS noise
+.DS_Store
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Folders we don’t want Git to ignore
+!barber_telemetry_ml/
+
+
