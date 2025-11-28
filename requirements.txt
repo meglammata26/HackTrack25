@@ -1,0 +1,7 @@
+streamlit
+pandas
+numpy
+scikit-learn
+plotly
+openai
+audio_recorder_streamlit
