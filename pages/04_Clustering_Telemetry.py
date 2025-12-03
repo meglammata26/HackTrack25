@@ -11,11 +11,11 @@ from f1_api import load_sample_barber_telemetry
 from data_utils import clean_numeric
 
 st.set_page_config(
-    page_title="🔍 Clustering Telemetry — Barber ML Lab",
+    page_title=" Clustering Telemetry — Barber ML Lab",
     layout="wide",
 )
 
-st.title("🔍 Clustering Telemetry")
+st.title("Clustering Telemetry")
 
 st.markdown(
     """
@@ -24,7 +24,7 @@ numeric features (e.g. speed, throttle, brake, G-forces, etc.).
 """
 )
 
-st.sidebar.header("📁 Data Source")
+st.sidebar.header("Data Source")
 
 data_source = st.sidebar.radio(
     "Choose telemetry data source:",
@@ -51,7 +51,7 @@ if df_raw.empty:
     st.info("Load a dataset via the sidebar to run clustering.")
     st.stop()
 
-st.subheader("📄 Telemetry (preview)")
+st.subheader("Telemetry (preview)")
 st.dataframe(df_raw.head())
 
 df = clean_numeric(df_raw)
@@ -85,15 +85,15 @@ if st.button("Run KMeans clustering"):
     df_clustered = X.copy()
     df_clustered["cluster"] = labels
 
-    st.subheader("📊 Cluster counts")
+    st.subheader("Cluster counts")
     st.bar_chart(df_clustered["cluster"].value_counts().sort_index())
 
-    st.subheader("📉 Cluster centroids")
+    st.subheader("Cluster centroids")
     centroids = pd.DataFrame(model.cluster_centers_, columns=feature_cols)
     centroids["cluster"] = np.arange(n_clusters)
     st.dataframe(centroids)
 
-    st.subheader("📈 Example 2D projection")
+    st.subheader("Example 2D projection")
     if len(feature_cols) >= 2:
         x_col = feature_cols[0]
         y_col = feature_cols[1]

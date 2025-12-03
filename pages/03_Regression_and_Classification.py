@@ -25,11 +25,11 @@ from data_utils import clean_numeric, add_fast_slow_label
 # ======================================================================
 
 st.set_page_config(
-    page_title="📈 Regression & Classification — Barber Telemetry ML",
+    page_title=" Regression & Classification — Barber Telemetry ML",
     layout="wide",
 )
 
-st.title("📈 Regression & Classification — Barber Telemetry ML")
+st.title("Regression & Classification — Barber Telemetry ML")
 
 st.markdown(
     """
@@ -44,7 +44,7 @@ Use this page to build **machine learning models** on Barber telemetry data:
 # LOAD DATA
 # ======================================================================
 
-st.sidebar.header("📁 Data Source")
+st.sidebar.header("Data Source")
 
 data_source = st.sidebar.radio(
     "Choose telemetry data source:",
@@ -72,7 +72,7 @@ if df_raw.empty:
     st.info("Load a dataset using the sidebar to train ML models.")
     st.stop()
 
-st.subheader("📄 Telemetry Data (Preview)")
+st.subheader("Telemetry Data (Preview)")
 st.dataframe(df_raw.head())
 
 df = clean_numeric(df_raw)

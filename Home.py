@@ -7,17 +7,17 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("🏁 Barber Telemetry ML Lab")
+st.title("Barber Telemetry ML Lab")
 
 st.markdown(
     """
 Welcome to your **Toyota Gazoo Racing Barber Telemetry ML Lab**.  
 This app lets you:
 
-- 📊 Explore telemetry & track visualizations  
-- 📈 Run regression models to predict numeric targets (lap time, speed, etc.)  
-- 🏁 Classify laps as **fast vs slow** using ML  
-- 🔍 Experiment with clustering on telemetry features  
+- Explore telemetry & track visualizations  
+- Run regression models to predict numeric targets (lap time, speed, etc.)  
+- Classify laps as **fast vs slow** using ML  
+- Experiment with clustering on telemetry features  
 
 Use the sidebar or the **Pages** menu to move between:
 - **Telemetry & Track** (02…)  
@@ -28,14 +28,14 @@ Use the sidebar or the **Pages** menu to move between:
 
 st.markdown("---")
 
-st.subheader("ℹ️ How to use")
+st.subheader("ℹHow to use")
 
 st.markdown(
     """
-1. Go to **📊 Telemetry & Track** to load or upload telemetry data.  
+1. Go to **Telemetry & Track** to load or upload telemetry data.  
 2. Inspect signals like speed, throttle, brake, etc.  
-3. Then open **📈 Regression & Classification** to train ML models.  
-4. Optionally, open **🔍 Clustering Telemetry** to segment laps or sections.
+3. Then open **Regression & Classification** to train ML models.  
+4. Optionally, open **Clustering Telemetry** to segment laps or sections.
 
 You can start with the **sample Barber CSV** or upload your own CSV that matches your schema.
 """

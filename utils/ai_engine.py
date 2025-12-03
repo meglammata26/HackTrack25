@@ -1,171 +1,182 @@
 # utils/ai_engine.py
+
+import os
 import pandas as pd
-import numpy as np
+import google.generativeai as genai
+
+# ----------------------------------------------------------------------
+# GEMINI CONFIG
+# ----------------------------------------------------------------------
+
+# You can either:
+#  - export GEMINI_API_KEY in your shell, OR
+#  - hardcode it here if you're just hacking locally.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or "PASTE_YOUR_KEY_HERE"
+
+if not GEMINI_API_KEY or GEMINI_API_KEY == "PASTE_YOUR_KEY_HERE":
+    print("[ai_engine] Warning: GEMINI_API_KEY not configured. Gemini calls will fail.")
+else:
+    genai.configure(api_key=GEMINI_API_KEY)
+
+TEXT_MODEL = "models/gemini-2.5-flash"
 
 
-def _safe_series(df, col):
-    if col is None or col not in df.columns:
-        return None
-    s = df[col]
-    if s.dtype == object:
-        s = pd.to_numeric(s, errors="coerce")
-    return s.replace([np.inf, -np.inf], np.nan)
+# ----------------------------------------------------------------------
+# TELEMETRY METRICS (supports barber_sample LONG FORMAT)
+# ----------------------------------------------------------------------
 
+def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute per-lap summary metrics for feedback.
 
-def compute_offline_metrics(df: pd.DataFrame,
-                            speed_col=None,
-                            throttle_col=None,
-                            brake_col=None,
-                            lap_id_col=None):
-    metrics = {}
+    Supports:
+      1) Wide format with columns: lap, speed, aps, pbrake_f
+      2) Long format like barber_sample with:
+         lap, telemetry_name, telemetry_value
+            - speed     -> avg_speed / var_speed
+            - aps       -> avg_throttle
+            - pbrake_f  -> avg_brake
+    """
+    if "lap" not in df.columns:
+        raise ValueError("Expected a 'lap' column in the telemetry dataframe.")
 
-    s_speed = _safe_series(df, speed_col)
-    s_throttle = _safe_series(df, throttle_col)
-    s_brake = _safe_series(df, brake_col)
+    lap_col = "lap"
 
-    if s_speed is not None:
-        metrics["avg_speed"] = float(s_speed.mean())
-        metrics["max_speed"] = float(s_speed.max())
-        metrics["speed_std"] = float(s_speed.std())
+    # ---- Case 1: wide format -------------------------------------------------
+    wide_cols = {"speed", "aps", "pbrake_f"}
+    if wide_cols.issubset(df.columns):
+        g = df.groupby(lap_col)
+        summary = g.agg(
+            avg_speed=("speed", "mean"),
+            avg_throttle=("aps", "mean"),
+            avg_brake=("pbrake_f", "mean"),
+            var_speed=("speed", "var"),
+        ).reset_index()
+        return summary.round(2)
 
-    if s_throttle is not None:
-        metrics["avg_throttle"] = float(s_throttle.mean())
-        metrics["throttle_std"] = float(s_throttle.std())
-        metrics["throttle_aggression"] = float((s_throttle >= 80).mean() * 100.0)
+    # ---- Case 2: barber_sample-style long format -----------------------------
+    if {"telemetry_name", "telemetry_value"}.issubset(df.columns):
+        name_col = "telemetry_name"
+        value_col = "telemetry_value"
 
-    if s_brake is not None:
-        metrics["avg_brake"] = float(s_brake.mean())
-        metrics["brake_std"] = float(s_brake.std())
-        mean_b = s_brake.mean()
-        std_b = s_brake.std()
-        if mean_b > 0:
-            cv = std_b / mean_b
-            score = max(0.0, min(100.0, 100.0 * (1.2 - cv)))
-            metrics["brake_consistency_score"] = float(score)
+        def agg_metric(name: str, agg: str):
+            sub = df[df[name_col] == name]
+            if sub.empty:
+                return pd.Series(dtype=float)
+            return sub.groupby(lap_col)[value_col].agg(agg)
 
-    if lap_id_col and lap_id_col in df.columns and s_speed is not None:
-        try:
-            lap_speed = df.groupby(lap_id_col)[speed_col].mean()
-            metrics["lap_avg_speed_mean"] = float(lap_speed.mean())
-            metrics["lap_avg_speed_std"] = float(lap_speed.std())
-            metrics["lap_avg_speed_min"] = float(lap_speed.min())
-            metrics["lap_avg_speed_max"] = float(lap_speed.max())
-        except Exception:
-            pass
+        speed_mean = agg_metric("speed", "mean")
+        speed_var = agg_metric("speed", "var")
+        throttle_mean = agg_metric("aps", "mean")
+        brake_mean = agg_metric("pbrake_f", "mean")
 
-    return metrics
+        # Base frame: all laps present in the data
+        summary = pd.DataFrame({lap_col: sorted(df[lap_col].dropna().unique())})
 
+        summary = summary.merge(
+            speed_mean.rename("avg_speed"),
+            on=lap_col,
+            how="left",
+        )
+        summary = summary.merge(
+            throttle_mean.rename("avg_throttle"),
+            on=lap_col,
+            how="left",
+        )
+        summary = summary.merge(
+            brake_mean.rename("avg_brake"),
+            on=lap_col,
+            how="left",
+        )
+        summary = summary.merge(
+            speed_var.rename("var_speed"),
+            on=lap_col,
+            how="left",
+        )
 
-def offline_gazoo_response(df: pd.DataFrame,
-                           user_question: str,
-                           speed_col=None,
-                           throttle_col=None,
-                           brake_col=None,
-                           lap_id_col=None) -> str:
-    metrics = compute_offline_metrics(
-        df,
-        speed_col=speed_col,
-        throttle_col=throttle_col,
-        brake_col=brake_col,
-        lap_id_col=lap_id_col,
+        return summary.round(2)
+
+    # ---- Unsupported shape ---------------------------------------------------
+    raise ValueError(
+        "Telemetry dataframe must either be:\n"
+        "  - wide format with columns: lap, speed, aps, pbrake_f\n"
+        "  - or long format with: lap, telemetry_name, telemetry_value"
     )
 
-    lines = []
-    lines.append("## Gazoo AI (Offline Race Engineer)")
-    lines.append("")
-    lines.append("_Running fully offline — using telemetry statistics and heuristics._")
-    lines.append("")
 
-    if user_question.strip():
-        lines.append("**Driver / Engineer Question**")
-        lines.append("")
-        lines.append(f"> {user_question.strip()}")
-        lines.append("")
+# ----------------------------------------------------------------------
+# GEMINI RACE ENGINEER (LAP-BY-LAP COACHING)
+# ----------------------------------------------------------------------
 
-    lines.append("### Global Pace Snapshot")
-    lines.append("")
+def gemini_race_engineer(df: pd.DataFrame, user_question: str):
+    """
+    Generate textual race analysis using Gemini based on per-lap metrics.
 
-    if "avg_speed" in metrics:
-        lines.append(
-            f"- Average speed across the stint: **{metrics['avg_speed']:.1f} units** "
-            f"(max: **{metrics.get('max_speed', 0):.1f}**)."
-        )
-    if "speed_std" in metrics:
-        lines.append(
-            f"- Speed variability (σ): **{metrics['speed_std']:.1f} units** "
-            "(higher = more on/off the throttle or more traffic influence)."
-        )
-    if "avg_throttle" in metrics:
-        lines.append(
-            f"- Average throttle: **{metrics['avg_throttle']:.1f}%** "
-            f"(time >80% throttle: ~**{metrics.get('throttle_aggression', 0):.1f}%**)."
-        )
-    if "avg_brake" in metrics:
-        lines.append(
-            f"- Average brake signal: **{metrics['avg_brake']:.1f}** "
-            "(scale depends on sensor; higher = more time spent braking)."
-        )
+    Returns:
+        (response_text: str, summary_df: pd.DataFrame)
+    """
+    summary = compute_metrics(df)
 
-    lines.append("")
+    if not user_question.strip():
+        user_question = "Give me a lap-by-lap coaching summary and where I'm losing time."
 
-    if "lap_avg_speed_std" in metrics and "lap_avg_speed_mean" in metrics:
-        lap_std = metrics["lap_avg_speed_std"]
-        lap_mean = metrics["lap_avg_speed_mean"]
-        lap_cv = lap_std / lap_mean if lap_mean > 0 else 0.0
+    prompt = f"""
+You are a calm, precise British motorsport race engineer.
+Give direct, actionable driving feedback using ONLY the telemetry summary below.
 
-        lines.append("### Lap-to-Lap Consistency")
-        lines.append("")
-        lines.append(
-            f"- Avg lap speed: **{lap_mean:.1f}** with σ = **{lap_std:.1f}** "
-            f"(relative variation: **{lap_cv*100:.1f}%**)."
-        )
+Telemetry Summary (per lap):
+{summary.to_markdown(index=False)}
 
-        if lap_cv < 0.03:
-            lines.append("- Laps are **very consistent** — good race trim behaviour.")
-        elif lap_cv < 0.07:
-            lines.append("- Laps are **reasonably consistent** — a few small mistakes or traffic.")
-        else:
-            lines.append("- Laps are **quite variable** — braking points and exits likely change lap-to-lap.")
+Driver Question:
+{user_question}
 
-        if "lap_avg_speed_min" in metrics and "lap_avg_speed_max" in metrics:
-            lines.append(
-                f"- Slowest vs fastest lap avg speed: "
-                f"**{metrics['lap_avg_speed_min']:.1f} → {metrics['lap_avg_speed_max']:.1f}**."
-            )
+Provide:
+- Key weaknesses
+- Lap-by-lap comparison
+- Actionable improvement steps
+- No disclaimers, no apologies, no fluff
+"""
 
-        lines.append("")
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "PASTE_YOUR_KEY_HERE":
+        raise RuntimeError("GEMINI_API_KEY is not configured; cannot call Gemini API.")
 
-    if "brake_consistency_score" in metrics:
-        score = metrics["brake_consistency_score"]
-        lines.append("### Braking Style")
-        lines.append("")
-        lines.append(f"- Braking consistency score (0–100): **{score:.1f}**.")
-        if score >= 80:
-            lines.append("- Braking is **very consistent** — markers are well defined.")
-        elif score >= 60:
-            lines.append("- Braking is **fairly consistent**, but a few corners are still unstable.")
-        else:
-            lines.append("- Braking is **inconsistent** — often a sign of uncertainty on corner entry.")
-        lines.append("")
+    model = genai.GenerativeModel(TEXT_MODEL)
+    response = model.generate_content(prompt)
 
-    if "throttle_aggression" in metrics:
-        thr_agg = metrics["throttle_aggression"]
-        lines.append("### Throttle Application")
-        lines.append("")
-        lines.append(f"- Time above 80% throttle: **{thr_agg:.1f}%** of samples.")
-        if thr_agg < 40:
-            lines.append("- Not much time at full throttle — likely early lifting or cautious exits.")
-        elif thr_agg < 70:
-            lines.append("- Throttle usage is **balanced** — some margin left for exits/straights.")
-        else:
-            lines.append("- Throttle usage is **very aggressive** — qualifying-style, watch for traction issues.")
-        lines.append("")
+    return response.text, summary
 
-    lines.append("### High-Level Recommendations")
-    lines.append("")
-    lines.append("- Focus on **2–3 key corners** rather than the whole lap at once.")
-    lines.append("- On entry: aim for **smooth brake release** so the car rotates the same way every lap.")
-    lines.append("- On exit: use **progressive throttle** to avoid on/off steps in mid-speed corners.")
-    lines.append("- Once consistency is stable, start moving braking points a little deeper where comfortable.")
 
-    return "\n".join(lines)
+# ----------------------------------------------------------------------
+# TEXT-ONLY RADIO CONVERSATION (OPTIONAL, NO AUDIO)
+# ----------------------------------------------------------------------
+
+def engineer_reply(user_text: str, summary_df: pd.DataFrame | None = None) -> str:
+    """
+    Generate a short 'radio' reply from the engineer.
+    Text-only. No audio / TTS.
+
+    You can call this from a simple chat UI if you want,
+    but it's not required for lap-by-lap coaching to work.
+    """
+    telemetry_part = ""
+    if summary_df is not None and not summary_df.empty:
+        telemetry_part = f"\nTelemetry Summary (per lap):\n{summary_df.to_markdown(index=False)}\n"
+
+    prompt = f"""
+You are a calm British motorsport race engineer.
+Reply like you're on team radio. Short, direct, no fluff.
+
+{telemetry_part}
+
+Driver radio:
+"{user_text}"
+
+Engineer, respond in at most 2–3 short sentences:
+"""
+
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "PASTE_YOUR_KEY_HERE":
+        raise RuntimeError("GEMINI_API_KEY is not configured; cannot call Gemini API.")
+
+    model = genai.GenerativeModel(TEXT_MODEL)
+    result = model.generate_content(prompt)
+    return result.text
