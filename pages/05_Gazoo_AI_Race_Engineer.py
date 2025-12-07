@@ -81,6 +81,59 @@ if "last_summary_df" in st.session_state:
         use_container_width=True,
     )
 
+def generate_engineer_report(lap_times, sector_scores, recommendation, fatigue_index, confidence):
+    best_lap = min(lap_times)
+    best_lap_number = lap_times.index(best_lap) + 1
+    best_sector = max(sector_scores, key=sector_scores.get)
+
+    report = f"""
+
+
+Fastest Lap Identified:
+    Lap {best_lap_number}  ({best_lap:.3f} seconds)
+
+Strongest Performance Sector:
+    {best_sector}
+
+Recommended Driver Adjustment:
+    {recommendation}
+
+Driver Performance Observation:
+    Focus retained at {fatigue_index*100:.1f}% relative to start of stint
+
+Model Confidence:
+    {confidence:.1f}%
+
+Report generated using telemetry, regression models, 
+gaze prediction metrics, and clustering patterns.
+
+"""
+    return report
+
+# ----------------------------------------------------------------------
+# Display auto-generated engineer insight report
+# ----------------------------------------------------------------------
+
+st.header("AI Race Engineer Insight Report")
+
+# Example placeholder values — replace with your real computed values
+lap_times = [92.4, 91.7, 91.2, 91.8]
+sector_scores = {"Sector 1": 76, "Sector 2": 81, "Sector 3": 88}
+recommendation = "Brake 120ms earlier entering Turn 9 for improved stability."
+fatigue_index = 0.82
+confidence = 79.3
+
+report_text = generate_engineer_report(
+    lap_times,
+    sector_scores,
+    recommendation,
+    fatigue_index,
+    confidence
+)
+
+st.text(report_text)
+
+
 # ----------------------------------------------------------------------
 # (Optional) Simple text radio chat (no audio, no whisper, just text)
 # ----------------------------------------------------------------------

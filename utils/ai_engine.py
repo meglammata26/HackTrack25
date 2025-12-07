@@ -2,48 +2,47 @@
 
 import os
 import pandas as pd
+import streamlit as st
 import google.generativeai as genai
 
 # ----------------------------------------------------------------------
-# GEMINI CONFIG
+# GOOGLE AI / GEMINI CONFIG (UPDATED FOR NEW SDK)
 # ----------------------------------------------------------------------
 
-# You can either:
-#  - export GEMINI_API_KEY in your shell, OR
-#  - hardcode it here if you're just hacking locally.
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or "PASTE_YOUR_KEY_HERE"
+# Priority:
+# 1. .streamlit/secrets.toml
+# 2. GOOGLE_API_KEY in environment
+# 3. GEMINI_API_KEY (legacy fallback)
 
-if not GEMINI_API_KEY or GEMINI_API_KEY == "PASTE_YOUR_KEY_HERE":
-    print("[ai_engine] Warning: GEMINI_API_KEY not configured. Gemini calls will fail.")
-else:
-    genai.configure(api_key=GEMINI_API_KEY)
+GOOGLE_API_KEY = (
+    st.secrets.get("GOOGLE_API_KEY")
+    or os.getenv("GOOGLE_API_KEY")
+    or os.getenv("GEMINI_API_KEY")
+)
+
+if not GOOGLE_API_KEY:
+    raise RuntimeError(
+        "No API key found.\n"
+        "Add GOOGLE_API_KEY to `.streamlit/secrets.toml` or export it in your environment."
+    )
+
+genai.configure(api_key=GOOGLE_API_KEY)
 
 TEXT_MODEL = "models/gemini-2.5-flash"
 
 
 # ----------------------------------------------------------------------
-# TELEMETRY METRICS (supports barber_sample LONG FORMAT)
+# TELEMETRY METRICS (supports wide or barber long format)
 # ----------------------------------------------------------------------
 
 def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Compute per-lap summary metrics for feedback.
-
-    Supports:
-      1) Wide format with columns: lap, speed, aps, pbrake_f
-      2) Long format like barber_sample with:
-         lap, telemetry_name, telemetry_value
-            - speed     -> avg_speed / var_speed
-            - aps       -> avg_throttle
-            - pbrake_f  -> avg_brake
-    """
     if "lap" not in df.columns:
         raise ValueError("Expected a 'lap' column in the telemetry dataframe.")
 
     lap_col = "lap"
-
-    # ---- Case 1: wide format -------------------------------------------------
     wide_cols = {"speed", "aps", "pbrake_f"}
+
+    # --- WIDE FORMAT ----------------------------------------------------------
     if wide_cols.issubset(df.columns):
         g = df.groupby(lap_col)
         summary = g.agg(
@@ -54,7 +53,7 @@ def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
         ).reset_index()
         return summary.round(2)
 
-    # ---- Case 2: barber_sample-style long format -----------------------------
+    # --- LONG FORMAT (barber_sample style) -----------------------------------
     if {"telemetry_name", "telemetry_value"}.issubset(df.columns):
         name_col = "telemetry_name"
         value_col = "telemetry_value"
@@ -70,51 +69,27 @@ def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
         throttle_mean = agg_metric("aps", "mean")
         brake_mean = agg_metric("pbrake_f", "mean")
 
-        # Base frame: all laps present in the data
         summary = pd.DataFrame({lap_col: sorted(df[lap_col].dropna().unique())})
 
-        summary = summary.merge(
-            speed_mean.rename("avg_speed"),
-            on=lap_col,
-            how="left",
-        )
-        summary = summary.merge(
-            throttle_mean.rename("avg_throttle"),
-            on=lap_col,
-            how="left",
-        )
-        summary = summary.merge(
-            brake_mean.rename("avg_brake"),
-            on=lap_col,
-            how="left",
-        )
-        summary = summary.merge(
-            speed_var.rename("var_speed"),
-            on=lap_col,
-            how="left",
-        )
+        summary = summary.merge(speed_mean.rename("avg_speed"), on=lap_col, how="left")
+        summary = summary.merge(throttle_mean.rename("avg_throttle"), on=lap_col, how="left")
+        summary = summary.merge(brake_mean.rename("avg_brake"), on=lap_col, how="left")
+        summary = summary.merge(speed_var.rename("var_speed"), on=lap_col, how="left")
 
         return summary.round(2)
 
-    # ---- Unsupported shape ---------------------------------------------------
     raise ValueError(
-        "Telemetry dataframe must either be:\n"
-        "  - wide format with columns: lap, speed, aps, pbrake_f\n"
-        "  - or long format with: lap, telemetry_name, telemetry_value"
+        "Telemetry must be either:\n"
+        "- Wide format with: lap, speed, aps, pbrake_f\n"
+        "- Long format with: lap, telemetry_name, telemetry_value"
     )
 
 
 # ----------------------------------------------------------------------
-# GEMINI RACE ENGINEER (LAP-BY-LAP COACHING)
+# MAIN LAP-BY-LAP GEMINI RACE ENGINEER
 # ----------------------------------------------------------------------
 
 def gemini_race_engineer(df: pd.DataFrame, user_question: str):
-    """
-    Generate textual race analysis using Gemini based on per-lap metrics.
-
-    Returns:
-        (response_text: str, summary_df: pd.DataFrame)
-    """
     summary = compute_metrics(df)
 
     if not user_question.strip():
@@ -134,11 +109,8 @@ Provide:
 - Key weaknesses
 - Lap-by-lap comparison
 - Actionable improvement steps
-- No disclaimers, no apologies, no fluff
+- No disclaimers, no apologies
 """
-
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "PASTE_YOUR_KEY_HERE":
-        raise RuntimeError("GEMINI_API_KEY is not configured; cannot call Gemini API.")
 
     model = genai.GenerativeModel(TEXT_MODEL)
     response = model.generate_content(prompt)
@@ -147,20 +119,16 @@ Provide:
 
 
 # ----------------------------------------------------------------------
-# TEXT-ONLY RADIO CONVERSATION (OPTIONAL, NO AUDIO)
+# SHORT RADIO-STYLE GEMINI REPLY
 # ----------------------------------------------------------------------
 
 def engineer_reply(user_text: str, summary_df: pd.DataFrame | None = None) -> str:
-    """
-    Generate a short 'radio' reply from the engineer.
-    Text-only. No audio / TTS.
-
-    You can call this from a simple chat UI if you want,
-    but it's not required for lap-by-lap coaching to work.
-    """
     telemetry_part = ""
     if summary_df is not None and not summary_df.empty:
-        telemetry_part = f"\nTelemetry Summary (per lap):\n{summary_df.to_markdown(index=False)}\n"
+        telemetry_part = (
+            f"\nTelemetry Summary (per lap):\n"
+            f"{summary_df.to_markdown(index=False)}\n"
+        )
 
     prompt = f"""
 You are a calm British motorsport race engineer.
@@ -174,9 +142,7 @@ Driver radio:
 Engineer, respond in at most 2–3 short sentences:
 """
 
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "PASTE_YOUR_KEY_HERE":
-        raise RuntimeError("GEMINI_API_KEY is not configured; cannot call Gemini API.")
-
     model = genai.GenerativeModel(TEXT_MODEL)
-    result = model.generate_content(prompt)
-    return result.text
+    reply = model.generate_content(prompt)
+
+    return reply.text

@@ -164,14 +164,14 @@ def run_regression():
         mae = mean_absolute_error(y_test, y_pred)
         rmse = root_mean_squared_error(y_test, y_pred)   # NEW ✔
 
-        st.subheader("📏 Regression Metrics")
+        st.subheader("Regression Metrics")
         c1, c2, c3 = st.columns(3)
         c1.metric("R²", f"{r2:.3f}")
         c2.metric("MAE", f"{mae:.3f}")
         c3.metric("RMSE", f"{rmse:.3f}")
 
         # Plot true vs predicted
-        st.subheader("🔍 True vs Predicted (line plot)")
+        st.subheader("True vs Predicted (line plot)")
         chart_df = pd.DataFrame({
             "y_true": y_test.values,
             "y_pred": y_pred,
@@ -185,7 +185,7 @@ def run_regression():
                 "importance": model.feature_importances_,
             }).sort_values("importance", ascending=False)
 
-            st.subheader("🌲 Feature Importance (Random Forest)")
+            st.subheader("Feature Importance (Random Forest)")
             st.bar_chart(importances.set_index("feature"))
 
 
@@ -241,14 +241,14 @@ def run_classification():
         prec = precision_score(y_test, y_pred, zero_division=0)
         rec = recall_score(y_test, y_pred, zero_division=0)
 
-        st.subheader("📏 Classification Metrics")
+        st.subheader("Classification Metrics")
         c1, c2, c3 = st.columns(3)
         c1.metric("Accuracy", f"{acc:.3f}")
         c2.metric("Precision", f"{prec:.3f}")
         c3.metric("Recall", f"{rec:.3f}")
 
         # Distribution of test labels
-        st.subheader("🔢 Class distribution (y_test)")
+        st.subheader("Class distribution (y_test)")
         st.bar_chart(y_test.value_counts(normalize=True))
 
         # Feature importance
@@ -258,7 +258,7 @@ def run_classification():
             "importance": importances
         }).sort_values("importance", ascending=False)
 
-        st.subheader("🌲 Feature Importances (Random Forest)")
+        st.subheader("Feature Importances (Random Forest)")
         st.bar_chart(imp_df.set_index("feature"))
 
 
